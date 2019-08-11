@@ -6,26 +6,76 @@ import collections
 import torch
 import argparse
 import numpy as np
-import torch.nn as nn
-import torch.nn.functional as F
+import random
+from PIL import Image
 
 from torch.autograd import Variable
 from torch.utils import data
-import Polygon as plg
+import torchvision.transforms as transforms
 
-from dataset import IC15TestLoader
 import models
 import util
 # c++ version pse based on opencv 3+
 from pse import pse
-# python pse
-# from pypse import pse as pypse
+
+random.seed(123456)
 
 
-def extend_3c(img):
-    img = img.reshape(img.shape[0], img.shape[1], 1)
-    img = np.concatenate((img, img, img), axis=2)
+def get_img(img_path):
+    try:
+        img = cv2.imread(img_path)
+        img = img[:, :, [2, 1, 0]]
+    except Exception as e:
+        print(img_path)
+        raise
     return img
+
+
+def scale(img, long_size=2240):
+    h, w = img.shape[0:2]
+    scale = long_size * 1.0 / max(h, w)
+    img = cv2.resize(img, dsize=None, fx=scale, fy=scale)
+    return img
+
+
+class DemoDataLoader(data.Dataset):
+    def __init__(self, input_path, part_id=0, part_num=1, long_size=2240):
+        data_dirs = [input_path]
+
+        self.img_paths = []
+
+        for data_dir in data_dirs:
+            img_names = util.io.ls(data_dir, '.jpg')
+            img_names.extend(util.io.ls(data_dir, '.png'))
+
+            img_paths = []
+            for idx, img_name in enumerate(img_names):
+                img_path = data_dir + img_name
+                img_paths.append(img_path)
+
+            self.img_paths.extend(img_paths)
+
+        part_size = len(self.img_paths) / part_num
+        l = int(part_id * part_size)
+        r = int((part_id + 1) * part_size)
+        self.img_paths = self.img_paths[l:r]
+        self.long_size = long_size
+
+    def __len__(self):
+        return len(self.img_paths)
+
+    def __getitem__(self, index):
+        img_path = self.img_paths[index]
+
+        img = get_img(img_path)
+
+        scaled_img = scale(img, self.long_size)
+        scaled_img = Image.fromarray(scaled_img)
+        scaled_img = scaled_img.convert('RGB')
+        scaled_img = transforms.ToTensor()(scaled_img)
+        scaled_img = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])(scaled_img)
+
+        return img[:, :, [2, 1, 0]], scaled_img
 
 
 def debug(idx, img_paths, imgs, output_root):
@@ -56,25 +106,8 @@ def write_result_as_txt(image_name, bboxes, path):
     util.io.write_lines(filename, lines)
 
 
-def polygon_from_points(points):
-    """
-    Returns a Polygon object to use with the Polygon2 class from a list of 8 points: x1,y1,x2,y2,x3,y3,x4,y4
-    """
-    resBoxes = np.empty([1, 8], dtype='int32')
-    resBoxes[0, 0] = int(points[0])
-    resBoxes[0, 4] = int(points[1])
-    resBoxes[0, 1] = int(points[2])
-    resBoxes[0, 5] = int(points[3])
-    resBoxes[0, 2] = int(points[4])
-    resBoxes[0, 6] = int(points[5])
-    resBoxes[0, 3] = int(points[6])
-    resBoxes[0, 7] = int(points[7])
-    pointMat = resBoxes[0].reshape([2, 4]).T
-    return plg.Polygon(pointMat)
-
-
 def test(args):
-    data_loader = IC15TestLoader(long_size=args.long_size)
+    data_loader = DemoDataLoader(long_size=args.long_size, input_path=args.input_dir)
     test_loader = torch.utils.data.DataLoader(
         data_loader,
         batch_size=1,
@@ -144,10 +177,7 @@ def test(args):
 
             # c++ version pse
             pred = pse(kernels, args.min_kernel_area / (args.scale * args.scale))
-            # python version pse
-            # pred = pypse(kernels, args.min_kernel_area / (args.scale * args.scale))
 
-            # scale = (org_img.shape[0] * 1.0 / pred.shape[0], org_img.shape[1] * 1.0 / pred.shape[1])
             scale = (org_img.shape[1] * 1.0 / pred.shape[1], org_img.shape[0] * 1.0 / pred.shape[0])
             label = pred
             label_num = np.max(label) + 1
@@ -175,18 +205,13 @@ def test(args):
             sys.stdout.flush()
 
             for bbox in bboxes:
-                cv2.drawContours(text_box, [bbox.reshape(4, 2)], -1, (0, 255, 0), 2)
+                cv2.drawContours(text_box, [bbox.reshape(4, 2)], -1, (0, 255, 0), 10)
 
             image_name = data_loader.img_paths[idx].split('/')[-1].split('.')[0]
-            write_result_as_txt(image_name, bboxes, 'outputs/submit_ic15/')
+            write_result_as_txt(image_name, bboxes, 'outputs/demo/')
 
             text_box = cv2.resize(text_box, (text.shape[1], text.shape[0]))
-            debug(idx, data_loader.img_paths, [[text_box]], 'outputs/vis_ic15/')
-
-    cmd = 'cd %s;zip -j %s %s/*' % ('./outputs/', 'submit_ic15.zip', 'submit_ic15');
-    print(cmd)
-    sys.stdout.flush()
-    util.cmd(cmd)
+            debug(idx, data_loader.img_paths, [[text_box]], 'outputs/demo/')
 
 
 if __name__ == '__main__':
@@ -194,6 +219,8 @@ if __name__ == '__main__':
     parser.add_argument('--arch', nargs='?', type=str, default='resnet50')
     parser.add_argument('--resume', nargs='?', type=str, default=None,
                         help='Path to previous saved model to restart from')
+    parser.add_argument('--input_dir', nargs='?', type=str, default='../data/demo/',
+                        help='Path to input directory')
     parser.add_argument('--binary_th', nargs='?', type=float, default=1.0,
                         help='Path to previous saved model to restart from')
     parser.add_argument('--kernel_num', nargs='?', type=int, default=7,

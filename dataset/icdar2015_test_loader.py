@@ -9,7 +9,7 @@ import random
 import torchvision.transforms as transforms
 import torch
 
-ic15_root_dir = '../data/ICDAR2015/'
+ic15_root_dir = '../data/ICDAR2017/'
 ic15_test_data_dir = ic15_root_dir + 'test/'
 ic15_test_gt_dir = ic15_root_dir + 'test_gt/'
 

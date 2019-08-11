@@ -191,7 +191,7 @@ def save_checkpoint(state, checkpoint='checkpoint', filename='checkpoint.pth.tar
 
 def main(args):
     if args.checkpoint == '':
-        args.checkpoint = "checkpoints/ic15_%s_bs_%d_ep_%d" % (args.arch, args.batch_size, args.n_epoch)
+        args.checkpoint = "checkpoints/ic17_%s_bs_%d_ep_%d" % (args.arch, args.batch_size, args.n_epoch)
     if args.pretrain:
         if 'synth' in args.pretrain:
             args.checkpoint += "_pretrain_synth"
