@@ -1,2 +1,2 @@
-from dataset.icdar2015_loader import IC15Loader
-from dataset.icdar2015_test_loader import IC15TestLoader
+from dataset.train_data_loader import TrainDataLoader
+from dataset.test_data_loader import TestDataLoader
