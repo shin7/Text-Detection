@@ -1,2 +1,2 @@
 # Text-Detection
-Scene text detection and recognition with deep neural network
+Scene text detection with deep neural network
